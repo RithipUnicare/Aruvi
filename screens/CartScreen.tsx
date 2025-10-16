@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ToastAndroid,
   Dimensions,
+  TouchableOpacity,
 } from 'react-native';
 import {
   Card,
@@ -16,6 +17,9 @@ import {
   useTheme,
   FAB,
   Divider,
+  Modal,
+  Portal,
+  IconButton,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -41,6 +45,11 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
   const [products, setProducts] = useState<{ [key: number]: Product }>({});
   const theme = useTheme();
   const { width } = Dimensions.get('window');
+  const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(
+    null,
+  );
+  const [editingQuantity, setEditingQuantity] = useState<number>(1);
+  const [showQtyModal, setShowQtyModal] = useState(false);
 
   useEffect(() => {
     loadKudil();
@@ -49,7 +58,6 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const loadProducts = async () => {
     try {
-      //const productsData = await AsyncStorage.getItem('products');
       if (productsData) {
         const productsList: Product[] = productsData;
         const productsMap: { [key: number]: Product } = {};
@@ -103,6 +111,22 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
     ToastAndroid.show('Item removed', ToastAndroid.SHORT);
   };
 
+  const openEditModal = (index: number) => {
+    setSelectedItemIndex(index);
+    setEditingQuantity(kudil.items[index].qty);
+    setShowQtyModal(true);
+  };
+
+  const updateQuantity = () => {
+    if (selectedItemIndex !== null && editingQuantity > 0) {
+      const updatedItems = [...kudil.items];
+      updatedItems[selectedItemIndex].qty = editingQuantity;
+      saveKudil(updatedItems);
+      setShowQtyModal(false);
+      ToastAndroid.show('Quantity updated', ToastAndroid.SHORT);
+    }
+  };
+
   const goToKOT = () => {
     const unsaved = kudil.items.filter(i => !i.served);
     if (unsaved.length === 0) {
@@ -134,7 +158,7 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
   const renderItem = ({ item, index }: { item: CartItem; index: number }) => {
     const product = products[item.productId];
     const isServed = item.served;
-    console.log(products);
+
     return (
       <Card
         style={[
@@ -161,7 +185,9 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
                 </Title>
               </View>
               <View style={styles.badgeContainer}>
-                <Badge style={styles.qtyBadge}>{`Qty: ${item.qty}`}</Badge>
+                <TouchableOpacity onPress={() => openEditModal(index)}>
+                  <Badge style={styles.qtyBadge}>{`Qty: ${item.qty}`}</Badge>
+                </TouchableOpacity>
                 <Badge
                   style={[
                     styles.statusBadge,
@@ -174,15 +200,22 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
                 </Badge>
               </View>
             </View>
-            <Button
-              icon="delete"
-              mode="text"
-              compact
-              onPress={() => removeItem(index)}
-              textColor="#FF6B6B"
-            >
-              Remove
-            </Button>
+            <View style={styles.cardActions}>
+              <IconButton
+                icon="pencil"
+                size={20}
+                iconColor={theme.colors.primary}
+                onPress={() => openEditModal(index)}
+                style={styles.editButton}
+              />
+              <IconButton
+                icon="delete"
+                size={20}
+                iconColor="#FF6B6B"
+                onPress={() => removeItem(index)}
+                style={styles.deleteButton}
+              />
+            </View>
           </View>
         </Card.Content>
       </Card>
@@ -291,6 +324,87 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
           onPress={addItem}
         />
       )}
+
+      {/* Edit Quantity Modal */}
+      <Portal>
+        <Modal
+          visible={showQtyModal}
+          onDismiss={() => setShowQtyModal(false)}
+          contentContainerStyle={[
+            styles.quantityModal,
+            { backgroundColor: theme.colors.surface },
+          ]}
+        >
+          <View style={styles.quantityModalContent}>
+            <View style={styles.quantityModalHeader}>
+              <Title style={styles.quantityModalTitle}>Edit Quantity</Title>
+              <IconButton
+                icon="close"
+                size={24}
+                onPress={() => setShowQtyModal(false)}
+              />
+            </View>
+
+            {selectedItemIndex !== null && (
+              <>
+                <Text style={styles.productNameText}>
+                  {products[kudil.items[selectedItemIndex]?.productId]?.name ||
+                    `Product ${kudil.items[selectedItemIndex]?.productId}`}
+                </Text>
+
+                <View style={styles.quantityControlContainer}>
+                  <Text style={styles.quantityLabel}>Quantity</Text>
+                  <View style={styles.quantityControls}>
+                    <IconButton
+                      icon="minus-circle"
+                      size={36}
+                      iconColor={theme.colors.primary}
+                      onPress={() =>
+                        setEditingQuantity(Math.max(1, editingQuantity - 1))
+                      }
+                      style={styles.qtyControlButton}
+                    />
+                    <View
+                      style={[
+                        styles.quantityDisplay,
+                        { backgroundColor: theme.colors.primary + '20' },
+                      ]}
+                    >
+                      <Text style={styles.quantityDisplayText}>
+                        {editingQuantity}
+                      </Text>
+                    </View>
+                    <IconButton
+                      icon="plus-circle"
+                      size={36}
+                      iconColor={theme.colors.primary}
+                      onPress={() => setEditingQuantity(editingQuantity + 1)}
+                      style={styles.qtyControlButton}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.quantityModalButtons}>
+                  <Button
+                    mode="outlined"
+                    onPress={() => setShowQtyModal(false)}
+                    style={styles.modalButton}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    mode="contained"
+                    onPress={updateQuantity}
+                    style={[styles.modalButton, styles.updateButton]}
+                  >
+                    Update
+                  </Button>
+                </View>
+              </>
+            )}
+          </View>
+        </Modal>
+      </Portal>
     </SafeAreaView>
   );
 };
@@ -390,28 +504,34 @@ const styles = StyleSheet.create({
   },
   badgeContainer: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     alignItems: 'center',
   },
   qtyBadge: {
     backgroundColor: '#667BC6',
     padding: 3,
-    fontSize: 14,
     width: 80,
     height: 40,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    fontSize: 14,
+    fontWeight: '700',
   },
   statusBadge: {
     fontWeight: '700',
-    padding: 3,
     fontSize: 14,
+    padding: 3,
     width: 80,
     height: 40,
-    display: 'flex',
+  },
+  cardActions: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 4,
+  },
+  editButton: {
+    margin: 0,
+  },
+  deleteButton: {
+    margin: 0,
   },
   bottomContainer: {
     flexDirection: 'row',
@@ -430,7 +550,7 @@ const styles = StyleSheet.create({
     flex: 1.2,
   },
   buttonContent: {
-    //paddingVertical: 8,
+    paddingVertical: 8,
   },
   buttonLabel: {
     fontSize: 14,
@@ -441,7 +561,69 @@ const styles = StyleSheet.create({
     margin: 16,
     right: 0,
     bottom: 0,
-    marginBottom: 20,
+  },
+  quantityModal: {
+    marginHorizontal: 20,
+    borderRadius: 12,
+    padding: 20,
+  },
+  quantityModalContent: {
+    gap: 16,
+  },
+  quantityModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  quantityModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  productNameText: {
+    fontSize: 16,
+    fontWeight: '500',
+    opacity: 0.8,
+  },
+  quantityControlContainer: {
+    gap: 12,
+    paddingVertical: 8,
+  },
+  quantityLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    opacity: 0.7,
+  },
+  quantityControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  qtyControlButton: {
+    margin: 0,
+  },
+  quantityDisplay: {
+    width: 80,
+    height: 50,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quantityDisplayText: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  quantityModalButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  modalButton: {
+    flex: 1,
+  },
+  updateButton: {
+    marginLeft: 0,
   },
 });
 
