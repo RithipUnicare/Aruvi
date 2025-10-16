@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "name": "Idli",
+    "availability": true,
+    "image": "idli.jpg"
+  },
+  {
+    "id": 2,
+    "name": "Dosa",
+    "availability": true,
+    "image": "dosa.jpg"
+  },
+  {
+    "id": 3,
+    "name": "Vada",
+    "availability": false,
+    "image": "vada.jpg"
+  },
+  {
+    "id": 4,
+    "name": "Sambar",
+    "availability": true,
+    "image": "sambar.jpg"
+  },
+  {
+    "id": 5,
+    "name": "Coffee",
+    "availability": true,
+    "image": "coffee.jpg"
+  }
+]
