@@ -25,10 +25,10 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList, CartItem } from '../Appnav';
-// Import the printer library - assume installed: npm i react-native-thermal-receipt-printer
-// @ts-ignore - for untyped library
-import RNAccountThermalPrinter from 'react-native-thermal-receipt-printer';
+// Import the correct printer from the library
+import { NetPrinter } from 'react-native-thermal-receipt-printer';
 import productsData from '../data/products.json';
+import dayjs from 'dayjs';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'KOT'>;
 
@@ -47,28 +47,43 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
   const { width } = Dimensions.get('window');
   const [printing, setPrinting] = useState(false);
   const [printerIP, setPrinterIP] = useState('192.168.1.100');
+  const [printerPort, setPrinterPort] = useState('9100');
   const [tempPrinterIP, setTempPrinterIP] = useState('192.168.1.100');
   const [showSettings, setShowSettings] = useState(false);
   const [showIPModal, setShowIPModal] = useState(false);
   const [products, setProducts] = useState<{ [key: number]: Product }>({});
+  const [printerConnected, setPrinterConnected] = useState(false);
 
   // Default printer settings - STA mode WiFi connection
   const PRINTER_CONFIG = {
-    DEFAULT_IP: '192.168.1.100', // WiFi STA mode IP
+    DEFAULT_IP: '192.168.1.100',
     DEFAULT_PORT: 9100,
-    WIDTH_TIMES: 32,
   };
 
   useEffect(() => {
     loadSettings();
     loadProducts();
+    initializePrinter();
   }, []);
+
+  const initializePrinter = async () => {
+    try {
+      await NetPrinter.init();
+      console.log('Printer initialized');
+    } catch (error) {
+      console.error('Error initializing printer:', error);
+    }
+  };
 
   const loadSettings = async () => {
     try {
       const savedIP = await AsyncStorage.getItem('printerIP');
+      const savedPort = await AsyncStorage.getItem('printerPort');
       if (savedIP) {
         setPrinterIP(savedIP);
+      }
+      if (savedPort) {
+        setPrinterPort(savedPort);
       }
     } catch (error) {
       console.error('Error loading printer settings:', error);
@@ -77,7 +92,6 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const loadProducts = async () => {
     try {
-      //const productsData = await AsyncStorage.getItem('products');
       if (productsData) {
         const productsList: Product[] = productsData;
         const productsMap: { [key: number]: Product } = {};
@@ -92,10 +106,25 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
   const savePrinterIP = async () => {
     try {
       await AsyncStorage.setItem('printerIP', printerIP);
-      Alert.alert('Success', 'Printer IP saved successfully');
+      await AsyncStorage.setItem('printerPort', printerPort);
+      Alert.alert('Success', 'Printer settings saved successfully');
       setShowSettings(false);
+      setPrinterConnected(false);
     } catch (error) {
-      Alert.alert('Error', 'Failed to save printer IP');
+      Alert.alert('Error', 'Failed to save printer settings');
+    }
+  };
+
+  const connectToPrinter = async () => {
+    try {
+      const port = parseInt(printerPort) || PRINTER_CONFIG.DEFAULT_PORT;
+      await NetPrinter.connectPrinter(printerIP.trim(), port);
+      setPrinterConnected(true);
+      return true;
+    } catch (error) {
+      console.error('Connection error:', error);
+      setPrinterConnected(false);
+      return false;
     }
   };
 
@@ -108,55 +137,65 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
     setPrinting(true);
 
     try {
-      // Prepare receipt data for thermal printer
-      const receiptLines: Array<{ type: string; value: string }> = [
-        { type: 'text', value: '=== KITCHEN ORDER TICKET ===' },
-        { type: 'text', value: '' },
-        { type: 'text', value: `TABLE/KUDIL: ${kudilId}` },
-        { type: 'text', value: `TIME: ${new Date().toLocaleTimeString()}` },
-        { type: 'text', value: '' },
-        { type: 'text', value: '================================' },
-      ];
+      // Connect to printer if not already connected
+      if (!printerConnected) {
+        const connected = await connectToPrinter();
+        if (!connected) {
+          throw new Error('Failed to connect to printer');
+        }
+      }
 
-      // Add items to receipt
+      // Build receipt text with formatting tags
+      let receiptText = '';
+      
+      // Restaurant Header
+      receiptText += '<CB>ARUVI</CB>\n';
+      receiptText += '<CM>Traditional Cuisine</CM>\n';
+      receiptText += '<CM>123 Main Street</CM>\n';
+      receiptText += '<CM>Salem, Tamil Nadu</CM>\n';
+      receiptText += '<C>================================</C>\n';
+      receiptText += '\n';
+      receiptText += '<CB>KITCHEN ORDER TICKET</CB>\n';
+      receiptText += '<C>================================</C>\n';
+      receiptText += '\n';
+      
+      // Table/Kudil info
+      receiptText += `<CM>TABLE/KUDIL: ${kudilId}</CM>\n`;
+      receiptText += `<CM>TIME: ${dayjs().format('HH:mm:ss')}</CM>\n`;
+      receiptText += `<CM>DATE: ${dayjs().format('DD-MM-YYYY')}</CM>\n`;
+      receiptText += '<C>================================</C>\n';
+      receiptText += '\n';
+
+      // Items
+      receiptText += '<CB>ORDER ITEMS</CB>\n';
+      receiptText += '<C>--------------------------------</C>\n';
+      receiptText += '\n';
       items.forEach((item: CartItem) => {
         const product = products[item.productId];
         const productName = product?.name || `Product ${item.productId}`;
-        receiptLines.push({
-          type: 'text',
-          value: `${productName}`,
-        });
-        receiptLines.push({
-          type: 'text',
-          value: `Quantity: ${item.qty}`,
-        });
-        receiptLines.push({
-          type: 'text',
-          value: '',
-        });
+        receiptText += `<CM>${productName}</CM>\n`;
+        receiptText += `<CM>Qty: ${item.qty}`;
+        if (product?.price) {
+          receiptText += ` x Rs.${product.price.toFixed(2)} = Rs.${(product.price * item.qty).toFixed(2)}`;
+        }
+        receiptText += '</CM>\n';
+        receiptText += '\n';
       });
 
-      receiptLines.push({
-        type: 'text',
-        value: '================================',
-      });
-      receiptLines.push({
-        type: 'text',
-        value: `Total Items: ${items.reduce((sum, item) => sum + item.qty, 0)}`,
-      });
-      receiptLines.push({ type: 'text', value: '' });
-      receiptLines.push({ type: 'text', value: '--- END OF ORDER ---' });
-      receiptLines.push({ type: 'text', value: '' });
+      // Footer
+      receiptText += '<C>================================</C>\n';
+      receiptText += `<CM>Total Items: ${items.reduce((sum, item) => sum + item.qty, 0)}</CM>\n`;
+      receiptText += `<CB>Total Amount: Rs.${totalPrice.toFixed(2)}</CB>\n`;
+      receiptText += '<C>================================</C>\n';
+      receiptText += '\n';
+      receiptText += '<CM>Thank You!</CM>\n';
+      receiptText += '<C>--- END OF ORDER ---</C>\n';
+      receiptText += '\n';
+      // receiptText += '\n';
+      // receiptText += '\n';
 
-      const printData = {
-        ip: printerIP.trim(),
-        port: PRINTER_CONFIG.DEFAULT_PORT,
-        widthtimes: PRINTER_CONFIG.WIDTH_TIMES,
-        receipt: receiptLines,
-      };
-
-      // Send to thermal printer
-      await (RNAccountThermalPrinter as any).printBill(printData);
+      // Print using printBill method (automatically cuts paper)
+      await NetPrinter.printBill(receiptText);
 
       setPrinting(false);
       Alert.alert('Success', 'Order sent to kitchen printer', [
@@ -170,11 +209,35 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
       ]);
     } catch (error) {
       setPrinting(false);
+      setPrinterConnected(false);
       console.error('Print error:', error);
       Alert.alert(
         'Print Failed',
-        `Unable to connect to printer at ${printerIP}. Please check:\n1. Printer IP address\n2. Printer is connected to WiFi\n3. Printer is powered on`,
+        `Unable to connect to printer at ${printerIP}:${printerPort}.\n\nPlease check:\n1. Printer IP address is correct\n2. Printer is connected to WiFi\n3. Printer is powered on\n4. Both devices are on same network`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Retry', onPress: () => printKOT() },
+        ]
       );
+    }
+  };
+
+  const testPrinterConnection = async () => {
+    setPrinting(true);
+    try {
+      const connected = await connectToPrinter();
+      if (connected) {
+        // Print test receipt
+        const testText = '<CB>TEST PRINT</CB>\n<C>Printer Connected Successfully!</C>\n\n';
+        await NetPrinter.printText(testText);
+        Alert.alert('Success', 'Printer connection successful!');
+      } else {
+        Alert.alert('Failed', 'Could not connect to printer');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Printer connection test failed');
+    } finally {
+      setPrinting(false);
     }
   };
 
@@ -257,6 +320,16 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
             mode="outlined"
             placeholder="192.168.1.100"
             style={styles.ipInput}
+            keyboardType="numeric"
+          />
+          <TextInput
+            label="Printer Port"
+            value={printerPort}
+            onChangeText={setPrinterPort}
+            mode="outlined"
+            placeholder="9100"
+            style={styles.ipInput}
+            keyboardType="numeric"
           />
           <Text style={styles.settingsHint}>
             WiFi STA Mode - Enter thermal printer IP on same network
@@ -266,11 +339,20 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
               mode="outlined"
               onPress={() => {
                 setPrinterIP(PRINTER_CONFIG.DEFAULT_IP);
-                setShowSettings(false);
+                setPrinterPort(PRINTER_CONFIG.DEFAULT_PORT.toString());
               }}
               style={{ flex: 1 }}
             >
               Reset
+            </Button>
+            <Button
+              mode="outlined"
+              onPress={testPrinterConnection}
+              style={{ flex: 1, marginLeft: 10 }}
+              loading={printing}
+              disabled={printing}
+            >
+              Test
             </Button>
             <Button
               mode="contained"
@@ -314,14 +396,17 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
 
       {/* Bottom Section */}
       <View style={styles.bottomContainer}>
-        <View style={styles.printerStatusContainer}>
+        <View style={[
+          styles.printerStatusContainer,
+          { backgroundColor: printerConnected ? '#4CAF5015' : '#FF8C0015' }
+        ]}>
           <MaterialCommunityIcons
-            name={printing ? 'printer-settings' : 'printer'}
+            name={printing ? 'printer-settings' : printerConnected ? 'printer-check' : 'printer'}
             size={20}
-            color={theme.colors.primary}
+            color={printerConnected ? '#4CAF50' : theme.colors.primary}
           />
           <Text style={styles.printerStatusText}>
-            {printing ? 'Printing...' : `Printer: ${printerIP}`}
+            {printing ? 'Printing...' : printerConnected ? `Connected: ${printerIP}:${printerPort}` : `Printer: ${printerIP}:${printerPort}`}
           </Text>
         </View>
 
@@ -465,7 +550,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: '#FF8C0015',
   },
   printerStatusText: {
     fontSize: 12,
