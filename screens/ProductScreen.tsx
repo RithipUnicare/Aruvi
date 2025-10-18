@@ -1,5 +1,5 @@
 // screens/ProductsScreen.tsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   FlatList,
@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ToastAndroid,
-  Image,
   Dimensions,
 } from 'react-native';
 import {
@@ -25,18 +24,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../Appnav';
-import productsData from '../data/products.json';
+import {
+  productsService,
+  type Product as ApiProduct,
+} from '../services/productsService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Products'>;
 
-interface Product {
-  id: number;
-  name: string;
-  availability: boolean;
-  image: string;
-  price?: number;
-  category?: string;
-}
+type Product = ApiProduct;
 
 const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
   const { onAdd } = route.params;
@@ -46,7 +41,20 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const theme = useTheme();
   const { width } = Dimensions.get('window');
-  const products: Product[] = productsData;
+  const [products, setProducts] = useState<Product[]>([]);
+
+  useEffect(() => {
+    getAllProducts();
+  }, []);
+
+  const getAllProducts = async () => {
+    const response = await productsService.getAll();
+    const data = response.data;
+    console.log('get all products', data);
+    setProducts(data || []);
+  };
+
+  console.log(products);
 
   const numColumns = width > 600 ? 3 : 2;
   const itemWidth = width / numColumns - 16;
@@ -55,20 +63,13 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
     let result = products;
 
     // Apply availability filter
-    if (searchFilter === 'available') {
-      result = result.filter(p => p.availability);
-    }
+    // placeholder for availability if needed later
 
     // Apply search query
-    if (searchQuery.trim()) {
+    if (searchQuery.trim() == '') {
       const query = searchQuery.toLowerCase();
-      result = result.filter(
-        p =>
-          p.name.toLowerCase().includes(query) ||
-          p.category?.toLowerCase().includes(query),
-      );
+      result = result.filter(p => p.name.toLowerCase().includes(query));
     }
-
     return result;
   }, [searchFilter, searchQuery]);
 
@@ -85,45 +86,23 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
           styles.card,
           {
             width: itemWidth,
-            backgroundColor: item.availability
-              ? theme.colors.surface
-              : theme.colors.surfaceVariant,
-            opacity: item.availability ? 1 : 0.6,
+            backgroundColor: theme.colors.surface,
+            opacity: 1,
           },
         ]}
       >
-        {/* Product Image */}
         <View style={[styles.imageContainer, { width: '100%', height: 120 }]}>
-          {item.image && item.image.startsWith('http') ? (
-            <Image
-              source={{ uri: item.image }}
-              style={styles.image}
-              defaultSource={require('../assets/971.jpg')}
+          <View
+            style={[
+              styles.imagePlaceholder,
+              { backgroundColor: theme.colors.primary + '20' },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="plate-utensils"
+              size={48}
+              color={theme.colors.primary}
             />
-          ) : (
-            <View
-              style={[
-                styles.imagePlaceholder,
-                { backgroundColor: theme.colors.primary + '20' },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="plate-utensils"
-                size={48}
-                color={theme.colors.primary}
-              />
-            </View>
-          )}
-
-          {/* Availability Badge */}
-          <View style={styles.availabilityBadge}>
-            <Badge
-              style={{
-                backgroundColor: item.availability ? '#4CAF50' : '#FF6B6B',
-              }}
-            >
-              {item.availability ? 'Available' : 'Out'}
-            </Badge>
           </View>
         </View>
 
@@ -131,17 +110,7 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
         <Card.Content style={styles.cardContent}>
           <Title style={styles.productTitle}>{item.name}</Title>
 
-          {item.category && (
-            <Chip
-              //size="small"
-              style={styles.categoryChip}
-              textStyle={styles.categoryText}
-            >
-              {item.category}
-            </Chip>
-          )}
-
-          {item.price && (
+          {item.price !== undefined && (
             <View style={styles.priceContainer}>
               <Text style={styles.priceLabel}>Price</Text>
               <Text style={styles.priceValue}>₹{item.price}</Text>
@@ -158,7 +127,7 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
             style={styles.addButton}
             contentStyle={styles.addButtonContent}
             labelStyle={styles.addButtonLabel}
-            disabled={!item.availability}
+            disabled={false}
             icon="plus"
           >
             Select
@@ -169,17 +138,19 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
   );
 
   const addToCart = () => {
-    if (selectedProduct?.availability && quantity > 0) {
-      onAdd(selectedProduct.id, quantity);
+    if (selectedProduct && quantity > 0) {
+      onAdd(
+        selectedProduct.id,
+        quantity,
+        selectedProduct.name,
+        selectedProduct.price,
+      );
       setSelectedProduct(null);
       setQuantity(1);
       ToastAndroid.show('Item added to cart', ToastAndroid.SHORT);
       navigation.goBack();
     } else {
-      ToastAndroid.show(
-        'Product not available or invalid quantity',
-        ToastAndroid.SHORT,
-      );
+      ToastAndroid.show('Invalid product or quantity', ToastAndroid.SHORT);
     }
   };
 
@@ -214,7 +185,7 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
         />
       </View>
 
-      {/* Filter Chips */}
+      {/* Filter Chips Placeholder */}
       <View style={styles.filterContainer}>
         <Chip
           selected={searchFilter === 'all'}
@@ -223,14 +194,6 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
           mode="outlined"
         >
           All Items
-        </Chip>
-        <Chip
-          selected={searchFilter === 'available'}
-          onPress={() => setSearchFilter('available')}
-          style={styles.filterChip}
-          mode="outlined"
-        >
-          Available
         </Chip>
       </View>
 
@@ -251,9 +214,9 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         ) : (
           <FlatList
-            data={filteredProducts}
+            data={filteredProducts.length === 0 ? products : filteredProducts}
             renderItem={renderProduct}
-            keyExtractor={(item: Product) => item.id.toString()}
+            keyExtractor={(item: Product) => item.id}
             numColumns={numColumns}
             columnWrapperStyle={styles.columnWrapper}
             showsVerticalScrollIndicator={false}
@@ -288,13 +251,6 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
             </View>
 
             {/* Product Details in Modal */}
-            {selectedProduct?.image &&
-              selectedProduct.image.startsWith('http') && (
-                <Image
-                  source={{ uri: selectedProduct.image }}
-                  style={styles.modalImage}
-                />
-              )}
 
             {selectedProduct?.price && (
               <View style={styles.modalPriceContainer}>

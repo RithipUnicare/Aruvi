@@ -23,26 +23,15 @@ import {
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList, WaiterProfile, CartItem } from '../Appnav';
-import productsData from '../data/products.json';
+import { ordersService } from '../services/ordersService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Cart'>;
-
-interface Product {
-  id: number;
-  name: string;
-  availability: boolean;
-  image: string;
-  price?: number;
-  category?: string;
-}
 
 const CartScreen: React.FC<Props> = ({ route, navigation }) => {
   const { kudilId, waiter } = route.params;
   const [kudil, setKudil] = useState<{ items: CartItem[] }>({ items: [] });
-  const [products, setProducts] = useState<{ [key: number]: Product }>({});
   const theme = useTheme();
   const { width } = Dimensions.get('window');
   const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(
@@ -53,111 +42,119 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
 
   useEffect(() => {
     loadKudil();
-    loadProducts();
   }, []);
 
-  const loadProducts = async () => {
-    try {
-      if (productsData) {
-        const productsList: Product[] = productsData;
-        const productsMap: { [key: number]: Product } = {};
-        productsList.forEach(p => (productsMap[p.id] = p));
-        setProducts(productsMap);
-      }
-    } catch (error) {
-      console.error('Error loading products:', error);
-    }
-  };
-
   const loadKudil = async () => {
-    const kudilsData = await AsyncStorage.getItem('kudils');
-    if (kudilsData) {
-      const kudils: { id: number; items: CartItem[] }[] =
-        JSON.parse(kudilsData);
-      const currentKudil = kudils.find(k => k.id === kudilId);
-      setKudil(currentKudil || { items: [] });
+    try {
+      const resp = await ordersService.getByKudil(kudilId);
+      const data = resp.data;
+      setKudil({
+        items:
+          data?.items?.map(i => ({
+            productId: i.productId,
+            productName: i.productName,
+            price: i.price,
+            quantity: i.quantity,
+          })) || [],
+      });
+    } catch (e) {
+      setKudil({ items: [] });
     }
   };
 
-  const saveKudil = async (updatedItems: CartItem[]) => {
-    const kudilsData = await AsyncStorage.getItem('kudils');
-    if (kudilsData) {
-      const kudils: { id: number; items: CartItem[] }[] =
-        JSON.parse(kudilsData);
-      const index = kudils.findIndex(k => k.id === kudilId);
-      if (index > -1) {
-        kudils[index].items = updatedItems;
-        await AsyncStorage.setItem('kudils', JSON.stringify(kudils));
-        setKudil({ ...kudils[index], items: updatedItems });
-      }
-    }
+  const replaceItemsLocal = (updatedItems: CartItem[]) => {
+    setKudil({ items: updatedItems });
   };
 
   const addItem = () => {
     navigation.navigate('Products', {
       kudilId,
-      onAdd: (productId: number, qty: number) => {
-        const newItem: CartItem = { productId, qty, served: false };
-        const updatedItems = [...kudil.items, newItem];
-        saveKudil(updatedItems);
-        ToastAndroid.show('Item added to cart', ToastAndroid.SHORT);
+      onAdd: async (
+        productId: string,
+        qty: number,
+        productName: string,
+        price: number,
+      ) => {
+        await ordersService.addItem(kudilId, {
+          productId,
+          productName,
+          quantity: qty,
+          price,
+        });
+        await loadKudil();
+        ToastAndroid.show('Item added to order', ToastAndroid.SHORT);
       },
     });
   };
 
   const removeItem = (index: number) => {
-    const updatedItems = kudil.items.filter((_, i) => i !== index);
-    saveKudil(updatedItems);
-    ToastAndroid.show('Item removed', ToastAndroid.SHORT);
+    const item = kudil.items[index];
+    if (!item) return;
+    ordersService
+      .removeItem(kudilId, item.productId)
+      .then(loadKudil)
+      .then(() => ToastAndroid.show('Item removed', ToastAndroid.SHORT));
   };
 
   const openEditModal = (index: number) => {
     setSelectedItemIndex(index);
-    setEditingQuantity(kudil.items[index].qty);
+    setEditingQuantity(kudil.items[index].quantity);
     setShowQtyModal(true);
   };
 
   const updateQuantity = () => {
     if (selectedItemIndex !== null && editingQuantity > 0) {
-      const updatedItems = [...kudil.items];
-      updatedItems[selectedItemIndex].qty = editingQuantity;
-      saveKudil(updatedItems);
-      setShowQtyModal(false);
-      ToastAndroid.show('Quantity updated', ToastAndroid.SHORT);
+      const item = kudil.items[selectedItemIndex];
+      ordersService
+        .updateItem(kudilId, item.productId, { quantity: editingQuantity })
+        .then(loadKudil)
+        .then(() => {
+          setShowQtyModal(false);
+          ToastAndroid.show('Quantity updated', ToastAndroid.SHORT);
+        });
     }
   };
 
   const goToKOT = () => {
-    const unsaved = kudil.items.filter(i => !i.served);
-    if (unsaved.length === 0) {
+    const items = kudil.items;
+    if (items.length === 0) {
       ToastAndroid.show('No unsaved items', ToastAndroid.SHORT);
       return;
     }
     navigation.navigate('KOT', {
       kudilId,
-      items: unsaved,
+      items,
       onPrint: () => {
-        const allItems = kudil.items.map(i =>
-          unsaved.some(u => u.productId === i.productId && u.qty === i.qty)
-            ? { ...i, served: true }
-            : i,
-        );
-        saveKudil(allItems);
-        ToastAndroid.show(
-          'Order printed and marked served',
-          ToastAndroid.SHORT,
-        );
+        ToastAndroid.show('Order sent to KOT', ToastAndroid.SHORT);
       },
     });
   };
 
+  const waiterComplete = async () => {
+    try {
+      if (kudil.items.length === 0) {
+        ToastAndroid.show('No items to complete', ToastAndroid.SHORT);
+        return;
+      }
+      const response = await ordersService.complete(kudilId);
+      const data = response.data;
+      console.log('complete response', data);
+      ToastAndroid.show('Order marked complete', ToastAndroid.SHORT);
+      navigation.goBack();
+    } catch (e) {
+      ToastAndroid.show('Failed to complete order', ToastAndroid.SHORT);
+    }
+  };
+
   const totalItems = kudil.items.length;
-  const unsavedItems = kudil.items.filter(i => !i.served).length;
-  const servedItems = kudil.items.filter(i => i.served).length;
+  const totalQty = kudil.items.reduce((sum, it) => sum + it.quantity, 0);
+  const totalAmount = kudil.items.reduce(
+    (sum, it) => sum + (it.price || 0) * it.quantity,
+    0,
+  );
 
   const renderItem = ({ item, index }: { item: CartItem; index: number }) => {
-    const product = products[item.productId];
-    const isServed = item.served;
+    const isServed = false;
 
     return (
       <Card
@@ -180,13 +177,13 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
                   size={18}
                   color={theme.colors.primary}
                 />
-                <Title style={styles.productTitle}>
-                  {product?.name || `Product ${item.productId}`}
-                </Title>
+                <Title style={styles.productTitle}>{item.productName}</Title>
               </View>
               <View style={styles.badgeContainer}>
                 <TouchableOpacity onPress={() => openEditModal(index)}>
-                  <Badge style={styles.qtyBadge}>{`Qty: ${item.qty}`}</Badge>
+                  <Badge
+                    style={styles.qtyBadge}
+                  >{`Qty: ${item.quantity}`}</Badge>
                 </TouchableOpacity>
                 <Badge
                   style={[
@@ -260,16 +257,16 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
         <Divider style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={styles.statLabel}>Pending</Text>
+          <Text style={styles.statLabel}>Quantity</Text>
           <Badge style={[styles.statBadge, { backgroundColor: '#FF8C00' }]}>
-            {unsavedItems}
+            {totalQty}
           </Badge>
         </View>
         <Divider style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={styles.statLabel}>Served</Text>
+          <Text style={styles.statLabel}>Amount</Text>
           <Badge style={[styles.statBadge, { backgroundColor: '#4CAF50' }]}>
-            {servedItems}
+            {`₹${totalAmount.toFixed(0)}`}
           </Badge>
         </View>
       </View>
@@ -309,9 +306,20 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
             icon="printer"
             contentStyle={styles.buttonContent}
             labelStyle={styles.buttonLabel}
-            disabled={unsavedItems === 0}
+            disabled={kudil.items.length === 0}
           >
-            KOT ({unsavedItems})
+            KOT ({kudil.items.length})
+          </Button>
+          <Button
+            mode="contained"
+            onPress={waiterComplete}
+            style={[styles.button]}
+            icon="check-circle"
+            contentStyle={styles.buttonContent}
+            labelStyle={styles.buttonLabel}
+            disabled={kudil.items.length === 0}
+          >
+            Waiter Complete
           </Button>
         </View>
       )}
@@ -348,8 +356,7 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
             {selectedItemIndex !== null && (
               <>
                 <Text style={styles.productNameText}>
-                  {products[kudil.items[selectedItemIndex]?.productId]?.name ||
-                    `Product ${kudil.items[selectedItemIndex]?.productId}`}
+                  {kudil.items[selectedItemIndex]?.productName}
                 </Text>
 
                 <View style={styles.quantityControlContainer}>

@@ -12,9 +12,10 @@ import {
 import { TextInput, Button, Title, Text, useTheme } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../Appnav';
+import { waitersService } from '../services/waitersService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
@@ -43,13 +44,12 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
     setLoading(true);
 
     try {
-      // Mock API call - in real, call API with mobile
-      const waiterProfile: WaiterProfile = {
-        name: 'Waiter ' + mobile,
-        id: mobile,
-      };
-      await AsyncStorage.setItem('waiter', JSON.stringify(waiterProfile));
-      navigation.replace('Home');
+      const resp = await waitersService.getAll();
+      const waiters = resp.data!;
+      const waiter = waiters.find(w => w.phone === mobile);
+      navigation.replace('Home', {
+        waiter: { id: waiter?.id ?? '', name: waiter?.name ?? '' },
+      });
     } catch (error) {
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {

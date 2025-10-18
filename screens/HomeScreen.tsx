@@ -11,55 +11,61 @@ import {
 import { Card, Title, Text, Badge, useTheme } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList, WaiterProfile } from '../Appnav';
+import { hotelsService } from '../services/hotelsService';
+import { ordersService, type KudilOrder } from '../services/ordersService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
-interface Kudil {
-  id: number;
-  items: CartItem[];
+interface KudilUI {
+  id: string;
+  itemsCount: number;
 }
 
-interface CartItem {
-  productId: number;
-  qty: number;
-  served: boolean;
-}
-
-const HomeScreen: React.FC<Props> = ({ navigation }) => {
-  const [kudils, setKudils] = useState<Kudil[]>([]);
-  const [waiter, setWaiter] = useState<WaiterProfile | null>(null);
+const HomeScreen: React.FC<Props> = ({ route, navigation }) => {
+  const { waiter } = route.params;
+  const [kudils, setKudils] = useState<KudilUI[]>([]);
   const theme = useTheme();
   const { width } = Dimensions.get('window');
   const numColumns = width > 600 ? 2 : 1;
 
   useEffect(() => {
-    loadData();
+    navigation.addListener('focus', loadData);
+    return () => {
+      navigation.removeListener('focus', loadData);
+    };
   }, []);
 
   const loadData = async () => {
-    const waiterData = await AsyncStorage.getItem('waiter');
-    const kudilsData = await AsyncStorage.getItem('kudils');
-    if (waiterData) setWaiter(JSON.parse(waiterData));
-    if (kudilsData) setKudils(JSON.parse(kudilsData));
+    try {
+      const hotels = await hotelsService.getAll();
+      const first = hotels.data && hotels.data[0];
+      const tableCount = first?.noOfTables ?? 0;
+      const ordersResp = await ordersService.getAll();
+      const active = ordersResp.data ?? [];
+      const activeMap = new Map<string, KudilOrder>();
+      active.forEach(o => activeMap.set(o.kudilId, o));
+      const list: KudilUI[] = Array.from({ length: tableCount }, (_, i) => {
+        const id = String(i + 1);
+        const ord = activeMap.get(id);
+        return { id, itemsCount: ord?.items?.length ?? 0 };
+      });
+      setKudils(list);
+    } catch (e) {
+      setKudils([]);
+    }
   };
 
-  const renderKudil = ({ item }: { item: Kudil }) => {
-    const totalItems = item.items.length;
-    const unsavedItems = item.items.filter((i: CartItem) => !i.served).length;
+  const renderKudil = ({ item }: { item: KudilUI }) => {
+    const totalItems = item.itemsCount;
     const isEmpty = totalItems === 0;
     const isOccupied = !isEmpty;
 
     return (
       <TouchableOpacity
         onPress={() => {
-          if (isEmpty && waiter) {
-            navigation.navigate('Cart', { kudilId: item.id, waiter });
-          } else {
-            Alert.alert('Kudil Occupied', 'This kudil already has orders.');
-          }
+          navigation.navigate('Cart', { kudilId: item.id, waiter });
         }}
         activeOpacity={isEmpty ? 0.7 : 1}
       >
@@ -118,9 +124,9 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
                   size={18}
                   color={theme.colors.primary}
                 />
-                <Text style={styles.statLabel}>Unserved</Text>
+                <Text style={styles.statLabel}>In Order</Text>
                 <Badge style={[styles.badge, { backgroundColor: '#FF8C00' }]}>
-                  {unsavedItems}
+                  {totalItems}
                 </Badge>
               </View>
             </View>
@@ -172,7 +178,7 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         <FlatList
           data={kudils}
           renderItem={renderKudil}
-          keyExtractor={(item: Kudil) => item.id.toString()}
+          keyExtractor={(item: KudilUI) => item.id}
           numColumns={numColumns}
           columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
           scrollEnabled={true}

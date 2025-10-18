@@ -17,7 +17,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useColorScheme, Appearance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DefaultTheme, DarkTheme } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { IconButton } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import LoginScreen from './screens/LoginScreen';
@@ -25,7 +24,7 @@ import HomeScreen from './screens/HomeScreen';
 import CartScreen from './screens/CartScreen';
 import ProductsScreen from './screens/ProductScreen';
 import KOTScreen from './screens/KOTScreen';
-import products from './data/products.json';
+ 
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const theme = { light: DefaultTheme, dark: DarkTheme };
@@ -60,13 +59,13 @@ const { LightTheme: PaperNavLight, DarkTheme: PaperNavDark } =
 
 export type RootStackParamList = {
   Login: undefined;
-  Home: undefined;
-  Cart: { kudilId: number; waiter: WaiterProfile };
+  Home: { waiter: WaiterProfile };
+  Cart: { kudilId: string; waiter: WaiterProfile };
   Products: {
-    kudilId: number;
-    onAdd: (productId: number, qty: number) => void;
+    kudilId: string;
+    onAdd: (productId: string, qty: number, productName: string, price: number) => void;
   };
-  KOT: { kudilId: number; items: CartItem[]; onPrint: () => void };
+  KOT: { kudilId: string; items: CartItem[]; onPrint: () => void };
 };
 
 export type WaiterProfile = {
@@ -75,9 +74,10 @@ export type WaiterProfile = {
 };
 
 export type CartItem = {
-  productId: number;
-  qty: number;
-  served: boolean;
+  productId: string;
+  productName: string;
+  quantity: number;
+  price: number;
 };
 
 export default function AppNav() {
@@ -88,17 +88,7 @@ export default function AppNav() {
   const navigationTheme = isDarkMode ? PaperNavDark : PaperNavLight;
 
   useEffect(() => {
-    // Ensure initial data if not present
-    AsyncStorage.getItem('kudils').then(data => {
-      if (!data) {
-        AsyncStorage.setItem(
-          'kudils',
-          JSON.stringify(
-            Array.from({ length: 8 }, (_, i) => ({ id: i + 1, items: [] })),
-          ),
-        );
-      }
-    });
+    // no-op
   }, []);
 
   const handleThemeToggle = () => {

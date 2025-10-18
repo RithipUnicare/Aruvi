@@ -22,12 +22,10 @@ import {
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList, CartItem } from '../Appnav';
 // Import the correct printer from the library
 import { NetPrinter } from 'react-native-thermal-receipt-printer';
-import productsData from '../data/products.json';
 import dayjs from 'dayjs';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'KOT'>;
@@ -51,7 +49,7 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
   const [tempPrinterIP, setTempPrinterIP] = useState('192.168.1.100');
   const [showSettings, setShowSettings] = useState(false);
   const [showIPModal, setShowIPModal] = useState(false);
-  const [products, setProducts] = useState<{ [key: number]: Product }>({});
+  const [products, setProducts] = useState<{ [key: string]: Product }>({});
   const [printerConnected, setPrinterConnected] = useState(false);
 
   // Default printer settings - STA mode WiFi connection
@@ -61,8 +59,7 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   useEffect(() => {
-    loadSettings();
-    loadProducts();
+    // no persisted settings or local products
     initializePrinter();
   }, []);
 
@@ -75,44 +72,12 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
-  const loadSettings = async () => {
-    try {
-      const savedIP = await AsyncStorage.getItem('printerIP');
-      const savedPort = await AsyncStorage.getItem('printerPort');
-      if (savedIP) {
-        setPrinterIP(savedIP);
-      }
-      if (savedPort) {
-        setPrinterPort(savedPort);
-      }
-    } catch (error) {
-      console.error('Error loading printer settings:', error);
-    }
-  };
-
-  const loadProducts = async () => {
-    try {
-      if (productsData) {
-        const productsList: Product[] = productsData;
-        const productsMap: { [key: number]: Product } = {};
-        productsList.forEach(p => (productsMap[p.id] = p));
-        setProducts(productsMap);
-      }
-    } catch (error) {
-      console.error('Error loading products:', error);
-    }
-  };
+  const loadSettings = async () => {};
 
   const savePrinterIP = async () => {
-    try {
-      await AsyncStorage.setItem('printerIP', printerIP);
-      await AsyncStorage.setItem('printerPort', printerPort);
-      Alert.alert('Success', 'Printer settings saved successfully');
-      setShowSettings(false);
-      setPrinterConnected(false);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to save printer settings');
-    }
+    Alert.alert('Saved', 'Printer settings updated for this session');
+    setShowSettings(false);
+    setPrinterConnected(false);
   };
 
   const connectToPrinter = async () => {
@@ -147,7 +112,7 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
 
       // Build receipt text with formatting tags
       let receiptText = '';
-      
+
       // Restaurant Header
       receiptText += '<CB>ARUVI</CB>\n';
       receiptText += '<CM>Traditional Cuisine</CM>\n';
@@ -158,7 +123,7 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
       receiptText += '<CB>KITCHEN ORDER TICKET</CB>\n';
       receiptText += '<C>================================</C>\n';
       receiptText += '\n';
-      
+
       // Table/Kudil info
       receiptText += `<CM>TABLE/KUDIL: ${kudilId}</CM>\n`;
       receiptText += `<CM>TIME: ${dayjs().format('HH:mm:ss')}</CM>\n`;
@@ -171,12 +136,13 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
       receiptText += '<C>--------------------------------</C>\n';
       receiptText += '\n';
       items.forEach((item: CartItem) => {
-        const product = products[item.productId];
-        const productName = product?.name || `Product ${item.productId}`;
+        const productName = item.productName;
         receiptText += `<CM>${productName}</CM>\n`;
-        receiptText += `<CM>Qty: ${item.qty}`;
-        if (product?.price) {
-          receiptText += ` x Rs.${product.price.toFixed(2)} = Rs.${(product.price * item.qty).toFixed(2)}`;
+        receiptText += `<CM>Qty: ${item.quantity}`;
+        if (item.price !== undefined) {
+          receiptText += ` x Rs.${item.price.toFixed(2)} = Rs.${(
+            item.price * item.quantity
+          ).toFixed(2)}`;
         }
         receiptText += '</CM>\n';
         receiptText += '\n';
@@ -184,8 +150,15 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
 
       // Footer
       receiptText += '<C>================================</C>\n';
-      receiptText += `<CM>Total Items: ${items.reduce((sum, item) => sum + item.qty, 0)}</CM>\n`;
-      receiptText += `<CB>Total Amount: Rs.${totalPrice.toFixed(2)}</CB>\n`;
+      receiptText += `<CM>Total Items: ${items.reduce(
+        (sum, item) => sum + item.quantity,
+        0,
+      )}</CM>\n`;
+      const totalAmount = items.reduce(
+        (sum, item) => sum + (item.price || 0) * item.quantity,
+        0,
+      );
+      receiptText += `<CB>Total Amount: Rs.${totalAmount.toFixed(2)}</CB>\n`;
       receiptText += '<C>================================</C>\n';
       receiptText += '\n';
       receiptText += '<CM>Thank You!</CM>\n';
@@ -217,7 +190,7 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Retry', onPress: () => printKOT() },
-        ]
+        ],
       );
     }
   };
@@ -228,7 +201,8 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
       const connected = await connectToPrinter();
       if (connected) {
         // Print test receipt
-        const testText = '<CB>TEST PRINT</CB>\n<C>Printer Connected Successfully!</C>\n\n';
+        const testText =
+          '<CB>TEST PRINT</CB>\n<C>Printer Connected Successfully!</C>\n\n';
         await NetPrinter.printText(testText);
         Alert.alert('Success', 'Printer connection successful!');
       } else {
@@ -242,8 +216,6 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const renderItem = ({ item }: { item: CartItem }) => {
-    const product = products[item.productId];
-
     return (
       <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <Card.Content style={styles.cardContent}>
@@ -255,16 +227,14 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
                   size={20}
                   color={theme.colors.primary}
                 />
-                <Title style={styles.itemTitle}>
-                  {product?.name || `Product ${item.productId}`}
-                </Title>
+                <Title style={styles.itemTitle}>{item.productName}</Title>
               </View>
             </View>
-            <Badge style={styles.qtyBadge}>{item.qty}</Badge>
+            <Badge style={styles.qtyBadge}>{item.quantity}</Badge>
           </View>
-          {product?.price && (
+          {item.price !== undefined && (
             <Text style={styles.priceText}>
-              ₹{(product.price * item.qty).toFixed(2)}
+              ₹{(item.price * item.quantity).toFixed(2)}
             </Text>
           )}
         </Card.Content>
@@ -272,11 +242,8 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
     );
   };
 
-  const totalQty = items.reduce((sum, item) => sum + item.qty, 0);
-  const totalPrice = items.reduce((sum, item) => {
-    const product = products[item.productId];
-    return sum + (product?.price || 0) * item.qty;
-  }, 0);
+  const totalQty = items.reduce((sum, item) => sum + item.quantity, 0);
+  const totalPrice = items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0);
 
   return (
     <SafeAreaView
@@ -396,17 +363,29 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
 
       {/* Bottom Section */}
       <View style={styles.bottomContainer}>
-        <View style={[
-          styles.printerStatusContainer,
-          { backgroundColor: printerConnected ? '#4CAF5015' : '#FF8C0015' }
-        ]}>
+        <View
+          style={[
+            styles.printerStatusContainer,
+            { backgroundColor: printerConnected ? '#4CAF5015' : '#FF8C0015' },
+          ]}
+        >
           <MaterialCommunityIcons
-            name={printing ? 'printer-settings' : printerConnected ? 'printer-check' : 'printer'}
+            name={
+              printing
+                ? 'printer-settings'
+                : printerConnected
+                ? 'printer-check'
+                : 'printer'
+            }
             size={20}
             color={printerConnected ? '#4CAF50' : theme.colors.primary}
           />
           <Text style={styles.printerStatusText}>
-            {printing ? 'Printing...' : printerConnected ? `Connected: ${printerIP}:${printerPort}` : `Printer: ${printerIP}:${printerPort}`}
+            {printing
+              ? 'Printing...'
+              : printerConnected
+              ? `Connected: ${printerIP}:${printerPort}`
+              : `Printer: ${printerIP}:${printerPort}`}
           </Text>
         </View>
 
