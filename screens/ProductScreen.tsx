@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ToastAndroid,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import {
   Card,
@@ -28,6 +29,7 @@ import {
   productsService,
   type Product as ApiProduct,
 } from '../services/productsService';
+import { RefreshControl } from 'react-native-gesture-handler';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Products'>;
 
@@ -42,36 +44,50 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
   const theme = useTheme();
   const { width } = Dimensions.get('window');
   const [products, setProducts] = useState<Product[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [filterProducts, setFilterProducts] = useState<Product[]>([]);
 
   useEffect(() => {
     getAllProducts();
   }, []);
 
   const getAllProducts = async () => {
+    setLoading(true);
     const response = await productsService.getAll();
     const data = response.data;
-    console.log('get all products', data);
     setProducts(data || []);
+    setFilterProducts(data || []);
+    setLoading(false);
   };
-
-  console.log(products);
 
   const numColumns = width > 600 ? 3 : 2;
   const itemWidth = width / numColumns - 16;
 
-  const filteredProducts = useMemo(() => {
+  const filteredProducts = () => {
     let result = products;
 
     // Apply availability filter
     // placeholder for availability if needed later
 
     // Apply search query
-    if (searchQuery.trim() == '') {
+    if (searchQuery.trim() !== '') {
       const query = searchQuery.toLowerCase();
       result = result.filter(p => p.name.toLowerCase().includes(query));
     }
-    return result;
-  }, [searchFilter, searchQuery]);
+
+    setFilterProducts(result);
+  };
+
+  useEffect(() => {
+    filteredProducts();
+  }, [searchQuery, products]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await getAllProducts();
+    setRefreshing(false);
+  };
 
   const renderProduct = ({ item }: { item: Product }) => (
     <TouchableOpacity
@@ -99,7 +115,7 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
             ]}
           >
             <MaterialCommunityIcons
-              name="plate-utensils"
+              name="food-fork-drink"
               size={48}
               color={theme.colors.primary}
             />
@@ -154,6 +170,15 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
+  if (loading) {
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text style={styles.loadingText}>Loading products...</Text>
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -168,7 +193,7 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
         <View>
           <Title style={styles.headerTitle}>Select Items</Title>
           <Text style={styles.headerSubtitle}>
-            {filteredProducts.length} items available
+            {filterProducts.length} items available
           </Text>
         </View>
       </View>
@@ -199,7 +224,7 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
 
       {/* Products Grid */}
       <View style={styles.inner}>
-        {filteredProducts.length === 0 ? (
+        {filterProducts.length === 0 ? (
           <View style={styles.emptyContainer}>
             <MaterialCommunityIcons
               name="plate-utensils-off"
@@ -214,13 +239,16 @@ const ProductsScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         ) : (
           <FlatList
-            data={filteredProducts.length === 0 ? products : filteredProducts}
+            data={filterProducts}
             renderItem={renderProduct}
             keyExtractor={(item: Product) => item.id}
             numColumns={numColumns}
             columnWrapperStyle={styles.columnWrapper}
             showsVerticalScrollIndicator={false}
             scrollEnabled={true}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
           />
         )}
       </View>
@@ -359,6 +387,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     gap: 8,
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    opacity: 0.6,
   },
   filterChip: {
     borderRadius: 8,

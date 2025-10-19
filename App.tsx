@@ -12,6 +12,7 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import Appnav from './Appnav';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -19,7 +20,9 @@ function App() {
   return (
     <SafeAreaProvider>
       {/* <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} /> */}
-      <Appnav />
+      <GestureHandlerRootView>
+        <Appnav />
+      </GestureHandlerRootView>
     </SafeAreaProvider>
   );
 }
