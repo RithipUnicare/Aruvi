@@ -27,6 +27,7 @@ import { RootStackParamList, CartItem } from '../Appnav';
 // Import the correct printer from the library
 import { NetPrinter } from 'react-native-thermal-receipt-printer';
 import dayjs from 'dayjs';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'KOT'>;
 
@@ -58,9 +59,18 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
     DEFAULT_PORT: 9100,
   };
 
+  const STORAGE_KEYS = {
+    PRINTER_IP: 'printer_ip',
+    PRINTER_PORT: 'printer_port',
+  } as const;
+
   useEffect(() => {
-    // no persisted settings or local products
-    initializePrinter();
+    // hydrate settings and initialize printer
+    const init = async () => {
+      await loadSettings();
+      await initializePrinter();
+    };
+    init();
   }, []);
 
   const initializePrinter = async () => {
@@ -72,12 +82,41 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
-  const loadSettings = async () => {};
+  const loadSettings = async () => {
+    try {
+      const [savedIP, savedPort] = await Promise.all([
+        AsyncStorage.getItem(STORAGE_KEYS.PRINTER_IP),
+        AsyncStorage.getItem(STORAGE_KEYS.PRINTER_PORT),
+      ]);
+
+      if (savedIP && savedIP.trim()) {
+        setPrinterIP(savedIP.trim());
+      }
+      if (savedPort && savedPort.trim() && !Number.isNaN(Number(savedPort))) {
+        setPrinterPort(String(parseInt(savedPort, 10)));
+      }
+    } catch (error) {
+      console.error('Failed to load printer settings from storage:', error);
+    }
+  };
 
   const savePrinterIP = async () => {
-    Alert.alert('Saved', 'Printer settings updated for this session');
-    setShowSettings(false);
-    setPrinterConnected(false);
+    try {
+      await Promise.all([
+        AsyncStorage.setItem(STORAGE_KEYS.PRINTER_IP, printerIP.trim()),
+        AsyncStorage.setItem(
+          STORAGE_KEYS.PRINTER_PORT,
+          (parseInt(printerPort) || PRINTER_CONFIG.DEFAULT_PORT).toString(),
+        ),
+      ]);
+      Alert.alert('Saved', 'Printer settings saved');
+    } catch (error) {
+      console.error('Failed to save printer settings to storage:', error);
+      Alert.alert('Error', 'Failed to save printer settings');
+    } finally {
+      setShowSettings(false);
+      setPrinterConnected(false);
+    }
   };
 
   const connectToPrinter = async () => {
