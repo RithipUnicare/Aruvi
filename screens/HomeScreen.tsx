@@ -15,6 +15,7 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import { RootStackParamList, WaiterProfile } from '../Appnav';
 import { hotelsService } from '../services/hotelsService';
 import { ordersService, type KudilOrder } from '../services/ordersService';
+import { RefreshControl } from 'react-native-gesture-handler';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -36,6 +37,13 @@ const HomeScreen: React.FC<Props> = ({ route, navigation }) => {
       navigation.removeListener('focus', loadData);
     };
   }, []);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
 
   const loadData = async () => {
     try {
@@ -183,6 +191,9 @@ const HomeScreen: React.FC<Props> = ({ route, navigation }) => {
           columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
           scrollEnabled={true}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
         />
       </View>
     </SafeAreaView>

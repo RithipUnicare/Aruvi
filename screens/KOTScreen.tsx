@@ -153,10 +153,7 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
       let receiptText = '';
 
       // Restaurant Header
-      receiptText += '<CB>ARUVI</CB>\n';
-      receiptText += '<CM>Traditional Cuisine</CM>\n';
-      receiptText += '<CM>123 Main Street</CM>\n';
-      receiptText += '<CM>Salem, Tamil Nadu</CM>\n';
+      receiptText += '<CB>ARUVI Restuarant</CB>\n';
       receiptText += '<C>================================</C>\n';
       receiptText += '\n';
       receiptText += '<CB>KITCHEN ORDER TICKET</CB>\n';
@@ -164,9 +161,10 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
       receiptText += '\n';
 
       // Table/Kudil info
-      receiptText += `<CM>TABLE/KUDIL: ${kudilId}</CM>\n`;
-      receiptText += `<CM>TIME: ${dayjs().format('HH:mm:ss')}</CM>\n`;
-      receiptText += `<CM>DATE: ${dayjs().format('DD-MM-YYYY')}</CM>\n`;
+      receiptText += `<CD>TABLE/KUDIL: ${kudilId}</CD>\n`;
+      receiptText += `<CM>DATE:${dayjs().format('DD-MM-YYYY')}-${dayjs().format(
+        'HH:mm:ss',
+      )}</CM>\n`;
       receiptText += '<C>================================</C>\n';
       receiptText += '\n';
 
@@ -176,13 +174,7 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
       receiptText += '\n';
       items.forEach((item: CartItem) => {
         const productName = item.productName;
-        receiptText += `<CM>${productName}</CM>\n`;
-        receiptText += `<CM>Qty: ${item.quantity}`;
-        if (item.price !== undefined) {
-          receiptText += ` x Rs.${item.price.toFixed(2)} = Rs.${(
-            item.price * item.quantity
-          ).toFixed(2)}`;
-        }
+        receiptText += `<CM>${productName}- Qty: ${item.quantity}</CM>\n`;
         receiptText += '</CM>\n';
         receiptText += '\n';
       });
@@ -193,14 +185,6 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
         (sum, item) => sum + item.quantity,
         0,
       )}</CM>\n`;
-      const totalAmount = items.reduce(
-        (sum, item) => sum + (item.price || 0) * item.quantity,
-        0,
-      );
-      receiptText += `<CB>Total Amount: Rs.${totalAmount.toFixed(2)}</CB>\n`;
-      receiptText += '<C>================================</C>\n';
-      receiptText += '\n';
-      receiptText += '<CM>Thank You!</CM>\n';
       receiptText += '<C>--- END OF ORDER ---</C>\n';
       receiptText += '\n';
       // receiptText += '\n';
@@ -282,7 +266,10 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const totalQty = items.reduce((sum, item) => sum + item.quantity, 0);
-  const totalPrice = items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0);
+  const totalPrice = items.reduce(
+    (sum, item) => sum + (item.price || 0) * item.quantity,
+    0,
+  );
 
   return (
     <SafeAreaView
