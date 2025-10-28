@@ -53,7 +53,6 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
   const [products, setProducts] = useState<{ [key: string]: Product }>({});
   const [printerConnected, setPrinterConnected] = useState(false);
 
-  // Default printer settings - STA mode WiFi connection
   const PRINTER_CONFIG = {
     DEFAULT_IP: '192.168.1.100',
     DEFAULT_PORT: 9100,
@@ -65,7 +64,6 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
   } as const;
 
   useEffect(() => {
-    // hydrate settings and initialize printer
     const init = async () => {
       await loadSettings();
       await initializePrinter();
@@ -76,7 +74,6 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
   const initializePrinter = async () => {
     try {
       await NetPrinter.init();
-      console.log('Printer initialized');
     } catch (error) {
       console.error('Error initializing printer:', error);
     }
@@ -141,7 +138,6 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
     setPrinting(true);
 
     try {
-      // Connect to printer if not already connected
       if (!printerConnected) {
         const connected = await connectToPrinter();
         if (!connected) {
@@ -149,48 +145,48 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
         }
       }
 
-      // Build receipt text with formatting tags
       let receiptText = '';
 
-      // Restaurant Header
-      receiptText += '<CB>ARUVI Restuarant</CB>\n';
-      receiptText += '<C>================================</C>\n';
+      receiptText += '<C>**********************************************</C>\n';
       receiptText += '\n';
-      receiptText += '<CB>KITCHEN ORDER TICKET</CB>\n';
-      receiptText += '<C>================================</C>\n';
+      receiptText += '<CB>ARUVI RESTAURANT</CB>\n';
+      receiptText += '<C>மணப்பாறை சமையல்</C>\n';
+      receiptText += '<C>Elampillai To Chinnampatti Main Road</C>\n';
+      receiptText += '<C>Near Nayara Petrol Bunk, Elampillai-637502</C>\n';
+      receiptText += '<C>Phone : 7200800840</C>\n';
+      receiptText += '<C>----------------------------------------------</C>\n';
       receiptText += '\n';
-
-      // Table/Kudil info
-      receiptText += `<CD>TABLE/KUDIL: ${kudilId}</CD>\n`;
-      receiptText += `<CM>DATE:${dayjs().format('DD-MM-YYYY')}-${dayjs().format(
-        'HH:mm:ss',
-      )}</CM>\n`;
-      receiptText += '<C>================================</C>\n';
+      receiptText += '<CB>KITCHEN ORDER</CB>\n';
+      receiptText += '<C>----------------------------------------------</C>\n';
       receiptText += '\n';
 
-      // Items
-      receiptText += '<CB>ORDER ITEMS</CB>\n';
-      receiptText += '<C>--------------------------------</C>\n';
+      receiptText += `<C>KUDIL NO : ${kudilId}     Date :${dayjs().format(
+        'DD-MM-YY',
+      )}  ${dayjs().format('HH:mm:ss')}</C>\n`;
+      receiptText += '<C>----------------------------------------------</C>\n';
       receiptText += '\n';
-      items.forEach((item: CartItem) => {
-        const productName = item.productName;
-        receiptText += `<CM>${productName}- Qty: ${item.quantity}</CM>\n`;
-        receiptText += '</CM>\n';
-        receiptText += '\n';
+
+      receiptText += 'S.No  Particulars            Qty\n';
+      receiptText += '<C>----------------------------------------------</C>\n';
+
+      items.forEach((item: CartItem, index: number) => {
+        const sno = (index + 1).toString().padEnd(6);
+        const name = item.productName.substring(0, 20).padEnd(22);
+        const qty = item.quantity.toString();
+        receiptText += `${sno}${name}${qty}\n`;
       });
 
-      // Footer
-      receiptText += '<C>================================</C>\n';
-      receiptText += `<CM>Total Items: ${items.reduce(
+      receiptText += '<C>----------------------------------------------</C>\n';
+      receiptText += '\n';
+      receiptText += `<CB>Total Items: ${items.reduce(
         (sum, item) => sum + item.quantity,
         0,
-      )}</CM>\n`;
-      receiptText += '<C>--- END OF ORDER ---</C>\n';
+      )}</CB>\n`;
       receiptText += '\n';
-      // receiptText += '\n';
-      // receiptText += '\n';
+      receiptText += '<C>**********************************************</C>\n';
+      receiptText += '\n';
+      receiptText += '\n';
 
-      // Print using printBill method (automatically cuts paper)
       await NetPrinter.printBill(receiptText);
 
       setPrinting(false);
@@ -223,7 +219,6 @@ const KOTScreen: React.FC<Props> = ({ route, navigation }) => {
     try {
       const connected = await connectToPrinter();
       if (connected) {
-        // Print test receipt
         const testText =
           '<CB>TEST PRINT</CB>\n<C>Printer Connected Successfully!</C>\n\n';
         await NetPrinter.printText(testText);
