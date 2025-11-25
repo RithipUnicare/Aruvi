@@ -26,6 +26,8 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList, WaiterProfile, CartItem } from '../Appnav';
 import { ordersService } from '../services/ordersService';
+import { historyService } from '../services/historyService';
+import { billsService } from '../services/billsService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Cart'>;
 
@@ -136,9 +138,29 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
         ToastAndroid.show('No items to complete', ToastAndroid.SHORT);
         return;
       }
+      console.log(kudil);
       const response = await ordersService.complete(kudilId);
       const data = response.data;
       console.log('complete response', data);
+      try {
+        await billsService.print({
+          kudilId,
+          waiterId: waiter.id,
+          items: kudil.items.map(it => ({
+            productId: it.productId,
+            productName: it.productName,
+            quantity: it.quantity,
+            price: it.price || 0,
+          })),
+          total: totalAmount,
+        });
+        ToastAndroid.show('Bill sent to printer', ToastAndroid.SHORT);
+      } catch (e) {
+        ToastAndroid.show(
+          'Order complete, bill print failed',
+          ToastAndroid.SHORT,
+        );
+      }
       ToastAndroid.show('Order marked complete', ToastAndroid.SHORT);
       navigation.goBack();
     } catch (e) {
@@ -319,7 +341,7 @@ const CartScreen: React.FC<Props> = ({ route, navigation }) => {
             labelStyle={styles.buttonLabel}
             disabled={kudil.items.length === 0}
           >
-            Waiter Complete
+            Waiter
           </Button>
         </View>
       )}
@@ -558,6 +580,7 @@ const styles = StyleSheet.create({
   },
   buttonContent: {
     paddingVertical: 8,
+    overflow: 'scroll',
   },
   buttonLabel: {
     fontSize: 14,
